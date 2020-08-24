@@ -1,6 +1,6 @@
 use crate::database::{BatchDatabase, Database, MemoryDatabase};
 use crate::{blockchain, descriptor, error, Wallet};
-use bitcoin::util::bip32::ExtendedPrivKey;
+use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey, PrivateKey};
 use bitcoin::{secp256k1, Network};
 use rand::{thread_rng, RngCore};
 use std::fs;
@@ -75,23 +75,21 @@ pub mod api {
         //  m/0
         let wallet = extended_priv_key.ckd_priv(
             &bitcoin::secp256k1::Secp256k1::new(),
-            bitcoin::util::bip32::ChildNumber::Hardened { index: 0 },
+            ChildNumber::Hardened { index: 0 },
         )?;
         // m/0'/0'
         let wallet_chain_int = wallet.ckd_priv(
-            &bitcoin::secp256k1::Secp256k1::new(),
-            bitcoin::util::bip32::ChildNumber::Hardened { index: 0 },
+            &secp256k1::Secp256k1::new(),
+            ChildNumber::Hardened { index: 0 },
         )?;
         // m/0'/1'
         let wallet_chain_ext = wallet.ckd_priv(
-            &bitcoin::secp256k1::Secp256k1::new(),
-            bitcoin::util::bip32::ChildNumber::Hardened { index: 1 },
+            &secp256k1::Secp256k1::new(),
+            ChildNumber::Hardened { index: 1 },
         )?;
 
-        let wallet_chain_ext_pubkey = bitcoin::util::bip32::ExtendedPubKey::from_private(
-            &bitcoin::secp256k1::Secp256k1::new(),
-            &wallet_chain_ext,
-        );
+        let wallet_chain_ext_pubkey =
+            ExtendedPubKey::from_private(&secp256k1::Secp256k1::new(), &wallet_chain_ext);
 
         println!(
         "Generated a new wallet!\nXprv:{:?}\ndepth:{:?}\nchild number:{:?}.\nHaving Xpub:{:?}\n\n",
@@ -155,7 +153,7 @@ mod tests {
     use super::*;
     #[test]
     fn prv_and_pub_descriptor_derive_same_results() {
-        let desc = api::generate_wallet_descriptors(bitcoin::Network::Testnet).unwrap();
+        let desc = api::generate_wallet_descriptors(Network::Testnet).unwrap();
         let extended_desc_ext = descriptor::ExtendedDescriptor::from_str(&desc.external).unwrap();
         let extended_desc_ext_pub = descriptor::ExtendedDescriptor::from_str(&desc.public).unwrap();
 
