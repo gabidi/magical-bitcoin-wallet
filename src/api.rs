@@ -1,6 +1,6 @@
 use crate::database::{BatchDatabase, Database, MemoryDatabase};
 use crate::{blockchain, descriptor, error, Wallet};
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey, PrivateKey};
+use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Network};
 use rand::{thread_rng, RngCore};
 use std::fs;
@@ -100,29 +100,25 @@ pub mod api {
     );
         //
         let descriptor_ext = format!(
-            "pkh({}/{}/*')",
+            "pkh({}/{}/{}/*')",
             wallet_chain_ext.to_string(),
-            format!("{}/", wallet_chain_ext.child_number.to_string())
-                .repeat(wallet_chain_ext.depth.into())
-                .trim_end_matches("/"),
+            wallet.child_number,
+            wallet_chain_ext.child_number,
         );
 
         let descriptor_int = format!(
-            "pkh({}/{}/*')",
+            "pkh({}/{}/{}/*')",
             wallet_chain_int.to_string(),
-            format!("{}/", wallet_chain_int.child_number.to_string())
-                .repeat(wallet_chain_int.depth.into())
-                .trim_end_matches("/"),
+            wallet.child_number,
+            wallet_chain_int.child_number,
         );
         let descriptor_ext_xpub = format!(
-            "pkh([{}/44'/{}/{}']{}/{}/*')",
-            // "pkh([{}/44'/{}/{}']{}/{}/{}/*')",
+            "pkh([{}/44'/{}/{}]{}/{}/*)",
             wallet_chain_ext_pubkey.parent_fingerprint,
             wallet.child_number,
             wallet_chain_ext_pubkey.child_number,
             wallet_chain_ext_pubkey.to_string(),
-            // wallet.child_number,
-            wallet_chain_ext.child_number
+            wallet.child_number,
         );
         Ok(WalletDesriptors {
             network,
