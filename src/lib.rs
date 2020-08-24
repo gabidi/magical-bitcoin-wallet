@@ -43,6 +43,7 @@ extern crate serial_test;
 
 #[macro_use]
 pub mod error;
+pub mod api;
 pub mod blockchain;
 pub mod database;
 pub mod descriptor;
@@ -50,7 +51,6 @@ pub mod psbt;
 pub mod signer;
 pub mod types;
 pub mod wallet;
-
 pub use descriptor::ExtendedDescriptor;
 pub use wallet::tx_builder::TxBuilder;
 pub use wallet::utils::FeeRate;
