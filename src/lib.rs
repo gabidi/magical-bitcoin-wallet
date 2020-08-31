@@ -11,7 +11,7 @@ extern crate async_trait;
 #[macro_use]
 extern crate magical_macros;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "compact_filters"))]
 #[macro_use]
 extern crate lazy_static;
 
@@ -47,7 +47,6 @@ pub mod blockchain;
 pub mod database;
 pub mod descriptor;
 pub mod psbt;
-pub mod signer;
 pub mod types;
 pub mod wallet;
 
