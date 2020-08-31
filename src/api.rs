@@ -1,5 +1,5 @@
 use crate::database::{BatchDatabase, BatchOperations, Database, MemoryDatabase};
-use crate::{blockchain, descriptor, error, Wallet};
+use crate::{blockchain, descriptor, error, Client, Wallet};
 use bitcoin::util::bip32::{ChildNumber, Error as Bip32Error, ExtendedPrivKey, ExtendedPubKey};
 use bitcoin::{secp256k1, Network};
 use rand::{thread_rng, RngCore};
@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalletDescriptors {
@@ -31,27 +30,65 @@ pub struct WalletCfg {
     descriptors: WalletDescriptors,
     address_look_ahead: u32,
     db_cfg: WalletDbCfg,
+    chain_cfg: WalletBlockchainCfg,
+}
+#[derive(Serialize, Deserialize)]
+pub enum WalletBlockchainCfg {
+    Esplora {
+        url: String,
+    },
+    Electrum {
+        server: String,
+        proxy: Option<String>,
+    },
+    BitcoinCoreRpc {
+        onion_url: String,
+    },
 }
 
-pub enum WalletDb {
-    MemoryDatabase(MemoryDatabase),
-    Sled(sled::Tree),
-}
-impl From<WalletDb> for MemoryDatabase {
-    fn from(item: WalletDb) -> MemoryDatabase {
-        if let WalletDb::MemoryDatabase(x) = item {
-            x
+#[cfg(feature = "esplora")]
+impl From<WalletBlockchainCfg> for blockchain::EsploraBlockchain {
+    fn from(item: WalletBlockchainCfg) -> blockchain::EsploraBlockchain {
+        if let WalletBlockchainCfg::Esplora { url } = item {
+            blockchain::EsploraBlockchain::new(&url.to_string())
         } else {
-            panic!("WTF!!");
+            panic!(
+                "Can only convert Esplora variant of WalletBlockchainCfg into EsploraBlockchain"
+            );
         }
     }
 }
-impl From<WalletDb> for sled::Tree {
-    fn from(item: WalletDb) -> sled::Tree {
-        if let WalletDb::Sled(x) = item {
-            x
+impl From<WalletBlockchainCfg> for blockchain::ElectrumBlockchain {
+    fn from(item: WalletBlockchainCfg) -> blockchain::ElectrumBlockchain {
+        if let WalletBlockchainCfg::Electrum { server, proxy } = item {
+            // TODO replace None with proxy
+            let client = Client::new(&server, None).unwrap();
+            blockchain::ElectrumBlockchain::from(client)
         } else {
-            panic!("WTF!! 2");
+            panic!(
+                "Can only convert Esplora variant of WalletBlockchainCfg into EsploraBlockchain"
+            );
+        }
+    }
+}
+
+impl From<WalletDbCfgTypes> for MemoryDatabase {
+    fn from(item: WalletDbCfgTypes) -> MemoryDatabase {
+        if let WalletDbCfgTypes::MemoryDatabase = item {
+            MemoryDatabase::new()
+        } else {
+            panic!("Can only convert MemoryDatabase variant of WalletDb into MemoryDatabase");
+        }
+    }
+}
+impl From<WalletDbCfgTypes> for sled::Tree {
+    fn from(item: WalletDbCfgTypes) -> sled::Tree {
+        if let WalletDbCfgTypes::Sled { path, name } = item {
+            let database =
+                sled::open(api::prepare_db_path(path.to_string()).to_str().unwrap()).unwrap();
+            database.open_tree(name).unwrap()
+        } else {
+            panic!("Can only convert MemoryDatabase variant of WalletDb into MemoryDatabase");
         }
     }
 }
@@ -147,37 +184,23 @@ pub mod api {
     }
 
     // FIXME put all wallet loading fns in a struct
-    fn prepare_db_path(db_path: String) -> PathBuf {
+    pub fn prepare_db_path(db_path: String) -> PathBuf {
         let mut dir = prepare_path(db_path);
         dir.push("database.sled");
         dir
     }
-    fn load_wallet_db(wallet_db_cfg: &WalletDbCfg) -> WalletDb {
-        match &wallet_db_cfg.db_type {
-            WalletDbCfgTypes::Sled { path, name } => {
-                let database =
-                    sled::open(prepare_db_path(path.to_string()).to_str().unwrap()).unwrap();
-                WalletDb::Sled(database.open_tree(name).unwrap())
-            }
-            WalletDbCfgTypes::MemoryDatabase => WalletDb::MemoryDatabase(MemoryDatabase::new()),
-        }
-    }
-
     pub fn prepare_wallet_from_json(
         wallet_json: &String,
-    ) -> Result<Wallet<blockchain::EsploraBlockchain, MemoryDatabase>, error::Error> {
+        // FIXME return types for this funtion ?  into works because rust infer return types from
+        // sig.. maybe something in the function sig call ?
+    ) -> Result<Wallet<blockchain::ElectrumBlockchain, MemoryDatabase>, error::Error> {
         let wallet_cfg: WalletCfg = serde_json::from_str(&wallet_json).unwrap();
-        // FIXME as cfg
-        let blockchain_source =
-            blockchain::EsploraBlockchain::new(&"https://blockstream.info".to_string());
-        let mut wallet_db = load_wallet_db(&wallet_cfg.db_cfg);
-
         Wallet::new(
             &wallet_cfg.descriptors.external,
             Some(&wallet_cfg.descriptors.internal),
             wallet_cfg.descriptors.network,
-            wallet_db.into(),
-            blockchain_source,
+            wallet_cfg.db_cfg.db_type.into(),
+            wallet_cfg.chain_cfg.into(),
         )
     }
 }
@@ -223,6 +246,9 @@ mod tests {
             address_look_ahead: 20,
             db_cfg: WalletDbCfg {
                 db_type: WalletDbCfgTypes::MemoryDatabase,
+            },
+            chain_cfg: WalletBlockchainCfg::Esplora {
+                url: "https://blockstream.info".to_string(),
             },
         };
         // address to test get address
