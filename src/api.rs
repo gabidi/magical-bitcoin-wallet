@@ -45,6 +45,21 @@ pub enum WalletBlockchainCfg {
         onion_url: String,
     },
 }
+//impl<I: blockchain::Blockchain> From<WalletBlockchainCfg> for I {
+//    fn from(item: WalletBlockchainCfg) -> I {
+//        if let WalletBlockchainCfg::Esplora { url } = item {
+//            blockchain::EsploraBlockchain::new(&url.to_string())
+//        } else if let WalletBlockchainCfg::Electrum { server, proxy } = item {
+//            // TODO replace None with proxy
+//            let client = Client::new(&server, None).unwrap();
+//            blockchain::ElectrumBlockchain::from(client)
+//        } else {
+//            panic!(
+//                "Can only convert Esplora variant of WalletBlockchainCfg into EsploraBlockchain"
+//            );
+//        }
+//    }
+//}
 
 #[cfg(feature = "esplora")]
 impl From<WalletBlockchainCfg> for blockchain::EsploraBlockchain {
@@ -84,15 +99,14 @@ impl From<WalletDbCfgTypes> for MemoryDatabase {
 impl From<WalletDbCfgTypes> for sled::Tree {
     fn from(item: WalletDbCfgTypes) -> sled::Tree {
         if let WalletDbCfgTypes::Sled { path, name } = item {
-            let database =
-                sled::open(api::prepare_db_path(path.to_string()).to_str().unwrap()).unwrap();
+            let database = sled::open(wallet_api::prepare_db_path(path).to_str().unwrap()).unwrap();
             database.open_tree(name).unwrap()
         } else {
             panic!("Can only convert MemoryDatabase variant of WalletDb into MemoryDatabase");
         }
     }
 }
-pub mod api {
+pub mod wallet_api {
     use super::*;
     pub fn generate_extended_priv_key(
         network: bitcoin::Network,
@@ -209,8 +223,14 @@ pub mod api {
 mod tests {
     use super::*;
     #[test]
+    fn should_parse_valid_tprv() {
+        let tprv =  "pkh(tprv8eHfgaBJ1oag7FF1hnTUSWEnbhscsktkAcvpLBRMbitEhw1uDjp5ztLFd2ajFjS4Scc6CZc94aLD6QxTeq7z61iWtX91FmdZrWcWnPkniYP/0/*)";
+        descriptor::ExtendedDescriptor::from_str(tprv).unwrap();
+    }
+    #[test]
     fn should_generate_valid_external_tpub_tprv_descriptors() {
-        let desc = api::generate_wallet_descriptors(Network::Testnet).unwrap();
+        let desc = wallet_api::generate_wallet_descriptors(Network::Testnet).unwrap();
+        println!("{:?}", desc);
         let extended_desc_ext = descriptor::ExtendedDescriptor::from_str(&desc.external).unwrap();
         let extended_desc_ext_pub = descriptor::ExtendedDescriptor::from_str(&desc.public).unwrap();
 
@@ -219,18 +239,19 @@ mod tests {
             .iter()
             .map(|x| {
                 let xprv_derived = extended_desc_ext
-                    .derive(*x)
-                    .unwrap()
+                    .derive(&[ChildNumber::from_normal_idx(*x).unwrap()])
                     .address(desc.network)
                     .unwrap()
                     .to_string();
                 let tpub_devrived = extended_desc_ext_pub
-                    .derive(*x)
-                    .unwrap()
+                    .derive(&[ChildNumber::from_normal_idx(*x).unwrap()])
                     .address(desc.network)
                     .unwrap()
                     .to_string();
-                assert_eq!(xprv_derived, tpub_devrived);
+                assert_eq!(
+                    xprv_derived, tpub_devrived,
+                    "Prv address equals tpub address"
+                );
             })
             .for_each(drop);
     }
@@ -239,7 +260,7 @@ mod tests {
     fn should_instantiate_wallet_from_json_cfg() {
         // TODO this is the setup with user input process
         // once done this is saved in App space as PGP encrypted ?
-        let descriptors = api::generate_wallet_descriptors(Network::Testnet).unwrap();
+        let descriptors = wallet_api::generate_wallet_descriptors(Network::Testnet).unwrap();
         let wallet_options = WalletCfg {
             name: "test".to_string(),
             descriptors,
@@ -255,8 +276,7 @@ mod tests {
         let address_ext =
             descriptor::ExtendedDescriptor::from_str(&wallet_options.descriptors.external)
                 .unwrap()
-                .derive(0)
-                .unwrap()
+                .derive(&[ChildNumber::from_normal_idx(0).unwrap()])
                 .address(bitcoin::Network::Testnet)
                 .unwrap()
                 .to_string();
@@ -264,7 +284,7 @@ mod tests {
         // Serialize wallet CFG into JSON string
         let serialized = serde_json::to_string(&wallet_options).unwrap();
 
-        let wallet = api::prepare_wallet_from_json(&serialized).unwrap();
+        let wallet = wallet_api::prepare_wallet_from_json(&serialized).unwrap();
         // FIXME enabling sync will reuslt in incorrect adddres compare. What index does sync leave
         // dervie at ?
         // wallet.sync(Some(wallet_options.address_look_ahead));
@@ -291,6 +311,6 @@ mod tests {
     //#[test]
 
     //fn should_withdraw_to_adddres() {
-    //    //api::spendRequest(WithdrawToAddressRequest {... });
+    //    //wallet_api::spendRequest(WithdrawToAddressRequest {... });
     //}
 }
