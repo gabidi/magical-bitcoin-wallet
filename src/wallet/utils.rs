@@ -1,46 +1,44 @@
+// Magical Bitcoin Library
+// Written in 2020 by
+//     Alekos Filini <alekos.filini@gmail.com>
+//
+// Copyright (c) 2020 Magical Bitcoin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 use miniscript::{MiniscriptKey, Satisfier};
 
 // De-facto standard "dust limit" (even though it should change based on the output type)
 const DUST_LIMIT_SATOSHI: u64 = 546;
 
+/// Trait to check if a value is below the dust limit
 // we implement this trait to make sure we don't mess up the comparison with off-by-one like a <
 // instead of a <= etc. The constant value for the dust limit is not public on purpose, to
 // encourage the usage of this trait.
 pub trait IsDust {
+    /// Check whether or not a value is below dust limit
     fn is_dust(&self) -> bool;
 }
 
 impl IsDust for u64 {
     fn is_dust(&self) -> bool {
         *self <= DUST_LIMIT_SATOSHI
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-// Internally stored as satoshi/vbyte
-pub struct FeeRate(f32);
-
-impl FeeRate {
-    pub fn from_btc_per_kvb(btc_per_kvb: f32) -> Self {
-        FeeRate(btc_per_kvb * 1e5)
-    }
-
-    pub fn from_sat_per_vb(sat_per_vb: f32) -> Self {
-        FeeRate(sat_per_vb)
-    }
-
-    pub fn default_min_relay_fee() -> Self {
-        FeeRate(1.0)
-    }
-
-    pub fn as_sat_vb(&self) -> f32 {
-        self.0
-    }
-}
-
-impl std::default::Default for FeeRate {
-    fn default() -> Self {
-        FeeRate::default_min_relay_fee()
     }
 }
 
@@ -134,7 +132,7 @@ impl<I: Iterator> Iterator for ChunksIterator<I> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::types::FeeRate;
 
     #[test]
     fn test_fee_from_btc_per_kb() {

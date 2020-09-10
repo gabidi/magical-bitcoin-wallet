@@ -1,3 +1,42 @@
+// Magical Bitcoin Library
+// Written in 2020 by
+//     Alekos Filini <alekos.filini@gmail.com>
+//
+// Copyright (c) 2020 Magical Bitcoin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+//! Electrum
+//!
+//! This module defines a [`Blockchain`] struct that wraps an [`electrum_client::Client`]
+//! and implements the logic required to populate the wallet's [database](crate::database::Database) by
+//! querying the inner client.
+//!
+//! ## Example
+//!
+//! ```no_run
+//! # use magical::blockchain::electrum::ElectrumBlockchain;
+//! let client = electrum_client::Client::new("ssl://electrum.blockstream.info:50002", None)?;
+//! let blockchain = ElectrumBlockchain::from(client);
+//! # Ok::<(), magical::Error>(())
+//! ```
+
 use std::collections::HashSet;
 
 #[allow(unused_imports)]
@@ -9,11 +48,15 @@ use electrum_client::{Client, ElectrumApi};
 
 use self::utils::{ELSGetHistoryRes, ELSListUnspentRes, ElectrumLikeSync};
 use super::*;
-use crate::database::{BatchDatabase, DatabaseUtils};
+use crate::database::BatchDatabase;
 use crate::error::Error;
 use crate::FeeRate;
 
-pub struct ElectrumBlockchain(Option<Client>);
+/// Wrapper over an Electrum Client that implements the required blockchain traits
+///
+/// ## Example
+/// See the [`blockchain::electrum`](crate::blockchain::electrum) module for a usage example.
+pub struct ElectrumBlockchain(Client);
 
 #[cfg(test)]
 #[cfg(feature = "test-electrum")]
@@ -24,21 +67,11 @@ fn local_electrs() -> ElectrumBlockchain {
 
 impl std::convert::From<Client> for ElectrumBlockchain {
     fn from(client: Client) -> Self {
-        ElectrumBlockchain(Some(client))
+        ElectrumBlockchain(client)
     }
 }
 
 impl Blockchain for ElectrumBlockchain {
-    fn offline() -> Self {
-        ElectrumBlockchain(None)
-    }
-
-    fn is_online(&self) -> bool {
-        self.0.is_some()
-    }
-}
-
-impl OnlineBlockchain for ElectrumBlockchain {
     fn get_capabilities(&self) -> HashSet<Capability> {
         vec![
             Capability::FullHistory,
@@ -49,34 +82,22 @@ impl OnlineBlockchain for ElectrumBlockchain {
         .collect()
     }
 
-    fn setup<D: BatchDatabase + DatabaseUtils, P: Progress>(
+    fn setup<D: BatchDatabase, P: Progress>(
         &self,
         stop_gap: Option<usize>,
         database: &mut D,
         progress_update: P,
     ) -> Result<(), Error> {
         self.0
-            .as_ref()
-            .ok_or(Error::OfflineClient)?
             .electrum_like_setup(stop_gap, database, progress_update)
     }
 
     fn get_tx(&self, txid: &Txid) -> Result<Option<Transaction>, Error> {
-        Ok(self
-            .0
-            .as_ref()
-            .ok_or(Error::OfflineClient)?
-            .transaction_get(txid)
-            .map(Option::Some)?)
+        Ok(self.0.transaction_get(txid).map(Option::Some)?)
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<(), Error> {
-        Ok(self
-            .0
-            .as_ref()
-            .ok_or(Error::OfflineClient)?
-            .transaction_broadcast(tx)
-            .map(|_| ())?)
+        Ok(self.0.transaction_broadcast(tx).map(|_| ())?)
     }
 
     fn get_height(&self) -> Result<u32, Error> {
@@ -84,18 +105,13 @@ impl OnlineBlockchain for ElectrumBlockchain {
 
         Ok(self
             .0
-            .as_ref()
-            .ok_or(Error::OfflineClient)?
             .block_headers_subscribe()
             .map(|data| data.height as u32)?)
     }
 
     fn estimate_fee(&self, target: usize) -> Result<FeeRate, Error> {
         Ok(FeeRate::from_btc_per_kvb(
-            self.0
-                .as_ref()
-                .ok_or(Error::OfflineClient)?
-                .estimate_fee(target)? as f32,
+            self.0.estimate_fee(target)? as f32
         ))
     }
 }

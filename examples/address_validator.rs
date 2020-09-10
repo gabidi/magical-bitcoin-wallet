@@ -1,11 +1,35 @@
+// Magical Bitcoin Library
+// Written in 2020 by
+//     Alekos Filini <alekos.filini@gmail.com>
+//
+// Copyright (c) 2020 Magical Bitcoin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 use std::sync::Arc;
 
-use magical_bitcoin_wallet::bitcoin;
-use magical_bitcoin_wallet::database::MemoryDatabase;
-use magical_bitcoin_wallet::descriptor::HDKeyPaths;
-use magical_bitcoin_wallet::types::ScriptType;
-use magical_bitcoin_wallet::wallet::address_validator::{AddressValidator, AddressValidatorError};
-use magical_bitcoin_wallet::{OfflineWallet, Wallet};
+use magical::bitcoin;
+use magical::database::MemoryDatabase;
+use magical::descriptor::HDKeyPaths;
+use magical::wallet::address_validator::{AddressValidator, AddressValidatorError};
+use magical::ScriptType;
+use magical::{OfflineWallet, Wallet};
 
 use bitcoin::hashes::hex::FromHex;
 use bitcoin::util::bip32::Fingerprint;
@@ -33,7 +57,7 @@ impl AddressValidator for DummyValidator {
     }
 }
 
-fn main() -> Result<(), magical_bitcoin_wallet::error::Error> {
+fn main() -> Result<(), magical::Error> {
     let descriptor = "sh(and_v(v:pk(tpubDDpWvmUrPZrhSPmUzCMBHffvC3HyMAPnWDSAQNBTnj1iZeJa7BZQEttFiP4DS4GCcXQHezdXhn86Hj6LHX5EDstXPWrMaSneRWM8yUf6NFd/*),after(630000)))";
     let mut wallet: OfflineWallet<_> =
         Wallet::new_offline(descriptor, None, Network::Regtest, MemoryDatabase::new())?;

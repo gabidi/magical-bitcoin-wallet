@@ -1,3 +1,93 @@
+// Magical Bitcoin Library
+// Written in 2020 by
+//     Alekos Filini <alekos.filini@gmail.com>
+//
+// Copyright (c) 2020 Magical Bitcoin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+//! Generalized signers
+//!
+//! This module provides the ability to add customized signers to a [`Wallet`](super::Wallet)
+//! through the [`Wallet::add_signer`](super::Wallet::add_signer) function.
+//!
+//! ```
+//! # use std::sync::Arc;
+//! # use std::str::FromStr;
+//! # use bitcoin::*;
+//! # use bitcoin::util::psbt;
+//! # use bitcoin::util::bip32::Fingerprint;
+//! # use magical::signer::*;
+//! # use magical::database::*;
+//! # use magical::*;
+//! # #[derive(Debug)]
+//! # struct CustomHSM;
+//! # impl CustomHSM {
+//! #     fn sign_input(&self, _psbt: &mut psbt::PartiallySignedTransaction, _input: usize) -> Result<(), SignerError> {
+//! #         Ok(())
+//! #     }
+//! #     fn connect() -> Self {
+//! #         CustomHSM
+//! #     }
+//! # }
+//! #[derive(Debug)]
+//! struct CustomSigner {
+//!     device: CustomHSM,
+//! }
+//!
+//! impl CustomSigner {
+//!     fn connect() -> Self {
+//!         CustomSigner { device: CustomHSM::connect() }
+//!     }
+//! }
+//!
+//! impl Signer for CustomSigner {
+//!     fn sign(
+//!         &self,
+//!         psbt: &mut psbt::PartiallySignedTransaction,
+//!         input_index: Option<usize>,
+//!     ) -> Result<(), SignerError> {
+//!         let input_index = input_index.ok_or(SignerError::InputIndexOutOfRange)?;
+//!         self.device.sign_input(psbt, input_index)?;
+//!
+//!         Ok(())
+//!     }
+//!
+//!     fn sign_whole_tx(&self) -> bool {
+//!         false
+//!     }
+//! }
+//!
+//! let custom_signer = CustomSigner::connect();
+//!
+//! let descriptor = "wpkh(tpubD6NzVbkrYhZ4Xferm7Pz4VnjdcDPFyjVu5K4iZXQ4pVN8Cks4pHVowTBXBKRhX64pkRyJZJN5xAKj4UDNnLPb5p2sSKXhewoYx5GbTdUFWq/*)";
+//! let mut wallet: OfflineWallet<_> = Wallet::new_offline(descriptor, None, Network::Testnet, MemoryDatabase::default())?;
+//! wallet.add_signer(
+//!     ScriptType::External,
+//!     Fingerprint::from_str("e30f11b8").unwrap().into(),
+//!     SignerOrdering(200),
+//!     Arc::new(Box::new(custom_signer))
+//! );
+//!
+//! # Ok::<_, magical::Error>(())
+//! ```
+
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -18,7 +108,7 @@ use miniscript::{Legacy, MiniscriptKey, Segwitv0};
 use crate::descriptor::XKeyUtils;
 
 /// Identifier of a signer in the `SignersContainers`. Used as a key to find the right signer among
-/// many of them
+/// multiple of them
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SignerId<Pk: MiniscriptKey> {
     PkHash(<Pk as MiniscriptKey>::Hash),
@@ -60,18 +150,39 @@ pub enum SignerError {
     MissingHDKeypath,
 }
 
+impl fmt::Display for SignerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for SignerError {}
+
 /// Trait for signers
+///
+/// This trait can be implemented to provide customized signers to the wallet. For an example see
+/// [`this module`](crate::wallet::signer)'s documentation.
 pub trait Signer: fmt::Debug {
+    /// Sign a PSBT
+    ///
+    /// The `input_index` argument is only provided if the wallet doesn't declare to sign the whole
+    /// transaction in one go (see [`Signer::sign_whole_tx`]). Otherwise its value is `None` and
+    /// can be ignored.
     fn sign(
         &self,
         psbt: &mut psbt::PartiallySignedTransaction,
         input_index: Option<usize>,
     ) -> Result<(), SignerError>;
 
-    fn sign_whole_tx(&self) -> bool {
-        false
-    }
+    /// Return whether or not the signer signs the whole transaction in one go instead of every
+    /// input individually
+    fn sign_whole_tx(&self) -> bool;
 
+    /// Return the secret key for the signer
+    ///
+    /// This is used internally to reconstruct the original descriptor that may contain secrets.
+    /// External signers that are meant to keep key isolated should just return `None` here (which
+    /// is the default for this method, if not overridden).
     fn descriptor_secret_key(&self) -> Option<DescriptorSecretKey> {
         None
     }
@@ -102,6 +213,10 @@ impl Signer for DescriptorXKey<ExtendedPrivKey> {
 
         let derived_key = self.xkey.derive_priv(&ctx, &deriv_path).unwrap();
         derived_key.private_key.sign(psbt, Some(input_index))
+    }
+
+    fn sign_whole_tx(&self) -> bool {
+        false
     }
 
     fn descriptor_secret_key(&self) -> Option<DescriptorSecretKey> {
@@ -152,11 +267,20 @@ impl Signer for PrivateKey {
         Ok(())
     }
 
+    fn sign_whole_tx(&self) -> bool {
+        false
+    }
+
     fn descriptor_secret_key(&self) -> Option<DescriptorSecretKey> {
         Some(DescriptorSecretKey::PrivKey(self.clone()))
     }
 }
 
+/// Defines the order in which signers are called
+///
+/// The default value is `100`. Signers with an ordering above that will be called later,
+/// and they will thus see the partial signatures added to the transaction once they get to sign
+/// themselves.
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub struct SignerOrdering(pub usize);
 
@@ -275,7 +399,7 @@ impl<Pk: MiniscriptKey> SignersContainer<Pk> {
     }
 }
 
-pub trait ComputeSighash {
+pub(crate) trait ComputeSighash {
     fn sighash(
         psbt: &psbt::PartiallySignedTransaction,
         input_index: usize,
